@@ -4,7 +4,7 @@ import {
   NgafaItem, NgafaEvent, UserRole, ModuleType
 } from '../types';
 
-const API_URL = '/api';
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 interface AppContextType {
   user: User | null;
