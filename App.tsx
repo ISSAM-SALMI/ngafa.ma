@@ -6,6 +6,7 @@ import { Dashboard } from './components/Dashboard';
 import { SalonModule } from './modules/HairSalon/SalonModule';
 import { DressModule } from './modules/DressRental/DressModule';
 import { NgafaModule } from './modules/Ngafa/NgafaModule';
+import { ClientsModule } from './components/ClientsModule';
 import { UserModule } from './modules/Users/UserModule';
 import { UserRole } from './types';
 
@@ -23,6 +24,7 @@ const AppContent = () => {
       case 'SALON': return <SalonModule />;
       case 'DRESSES': return <DressModule />;
       case 'NGAFA': return <NgafaModule />;
+      case 'CLIENTS': return <ClientsModule />;
       case 'USERS': 
         return user.role === UserRole.ADMIN ? <UserModule /> : <Dashboard />;
       default: return <Dashboard />;

@@ -140,14 +140,8 @@ export const SalonModule = () => {
 
   const handlePrintVisit = (visit: SalonVisit) => {
     if (!viewingClient) return;
-    printReceipt({
-      title: 'إيصال خدمة صالون',
-      id: visit.id,
-      date: visit.date,
-      client: viewingClient,
-      total: visit.totalAmount, // Already a number now
-      items: visit.services.map(s => ({ name: s.name, price: Number(s.price) }))
-    });
+    // Backend PDF generation to match Ngafa/Dress style
+    window.open(`/api/salon-visits/${visit.id}/receipt/`, '_blank');
   };
 
   // --- RENDER ---

@@ -1,30 +1,38 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { ModuleType, DressStatus, DressRental, Dress } from '../../types';
-import { Shirt, Search, Calendar, CheckCircle, XCircle, Settings, Edit2, Trash2, Save, X, Plus, Printer } from 'lucide-react';
-import { printReceipt } from '../../utils/printReceipt';
+import { 
+  Shirt, Search, Calendar, CheckCircle, XCircle, 
+  Settings, Edit2, Trash2, Save, X, Plus, Printer, 
+  History, ArrowLeft, User as UserIcon, Filter, 
+  ChevronRight, ArrowRight
+} from 'lucide-react';
 
 export const DressModule = () => {
   const { 
     clients, dresses, rentals, 
-    addClient, addRental, 
+    addClient, addRental, returnRental,
     addDress, updateDress, deleteDress 
   } = useApp();
   
-  const [view, setView] = useState<'INVENTORY' | 'NEW_RENTAL' | 'SETTINGS'>('INVENTORY');
+  // --- View State ---
+  const [activeTab, setActiveTab] = useState<'RENTALS' | 'INVENTORY' | 'NEW_RENTAL'>('RENTALS');
 
-  // New Client
+  // --- Search/Filter State ---
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'RETURNED'>('ALL');
+
+  // --- New Rental State ---
   const [newClient, setNewClient] = useState({ firstName: '', lastName: '', phone: '', cin: '' });
-  
-  // New Rental
   const [rentalData, setRentalData] = useState({
     clientId: '',
     dressId: '',
     startDate: new Date().toISOString().split('T')[0],
-    endDate: ''
+    endDate: '' // User must select
   });
 
-  // --- Dress Management State ---
+  // --- Dress Form State ---
+  const [isEditingDress, setIsEditingDress] = useState(false);
   const [dressForm, setDressForm] = useState<{
     id?: string, 
     name: string, 
@@ -36,32 +44,44 @@ export const DressModule = () => {
   }>({
     name: '', reference: '', size: '', color: '', pricePerDay: '', status: DressStatus.AVAILABLE
   });
-  const [isEditingDress, setIsEditingDress] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
-  const dressClients = clients.filter(c => c.module === ModuleType.DRESSES);
+  // --- Derived Data ---
+  const dressClients = useMemo(() => clients.filter(c => c.module === ModuleType.DRESSES), [clients]);
+  
+  const filteredRentals = useMemo(() => {
+    return rentals
+      .filter(r => {
+        if (statusFilter !== 'ALL' && r.status !== statusFilter) return false;
+        if (!searchTerm) return true;
+        const client = clients.find(c => c.id === r.clientId);
+        const dress = dresses.find(d => d.id === r.dressId);
+        const searchLower = searchTerm.toLowerCase();
+        return (
+          (client?.firstName.toLowerCase() || '').includes(searchLower) ||
+          (client?.lastName.toLowerCase() || '').includes(searchLower) ||
+          (dress?.name.toLowerCase() || '').includes(searchLower) ||
+          (dress?.reference.toLowerCase() || '').includes(searchLower)
+        );
+      })
+      .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+  }, [rentals, searchTerm, statusFilter, clients, dresses]);
 
-  const handleCreateClient = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const created = await addClient({
-      id: crypto.randomUUID(),
-      ...newClient,
-      module: ModuleType.DRESSES,
-      createdAt: new Date().toISOString()
-    });
+  const filteredDresses = useMemo(() => {
+    if (!searchTerm) return dresses;
+    const lower = searchTerm.toLowerCase();
+    return dresses.filter(d => 
+      d.name.toLowerCase().includes(lower) || 
+      d.reference.toLowerCase().includes(lower) ||
+      d.color.toLowerCase().includes(lower)
+    );
+  }, [dresses, searchTerm]);
 
-    if (created) {
-      setRentalData(prev => ({ ...prev, clientId: created.id }));
-    }
-
-    setNewClient({ firstName: '', lastName: '', phone: '', cin: '' });
-  };
-
+  // --- Helpers ---
   const isDressAvailable = (dressId: string, start: string, end: string) => {
-     // Simple overlap check
      const s = new Date(start).getTime();
      const e = new Date(end).getTime();
-     if(isNaN(s) || isNaN(e)) return true; // Invalid dates
+     if(isNaN(s) || isNaN(e)) return true; 
 
      return !rentals.some(r => {
         if (r.dressId !== dressId || r.status !== 'ACTIVE') return false;
@@ -71,24 +91,22 @@ export const DressModule = () => {
      });
   };
 
+  const handleCreateClient = async () => {
+    if (!newClient.firstName || !newClient.lastName) return null;
+    return await addClient({
+      id: crypto.randomUUID(),
+      ...newClient,
+      module: ModuleType.DRESSES,
+      createdAt: new Date().toISOString()
+    });
+  };
+
   const handleRent = async () => {
     let finalClientId = rentalData.clientId;
 
-    // Handle implicit new client creation if form filled but not saved
-    if (!finalClientId && newClient.firstName && newClient.lastName) {
-       const created = await addClient({
-          id: crypto.randomUUID(),
-          ...newClient,
-          module: ModuleType.DRESSES,
-          createdAt: new Date().toISOString()
-       });
-       if (created) {
-         finalClientId = created.id;
-         // Clear form
-         setNewClient({ firstName: '', lastName: '', phone: '', cin: '' });
-         // Update selection in case we stay on this view
-         setRentalData(prev => ({ ...prev, clientId: created.id }));
-       }
+    if (!finalClientId) {
+      const created = await handleCreateClient();
+      if (created) finalClientId = created.id;
     }
 
     if (!finalClientId || !rentalData.dressId || !rentalData.startDate || !rentalData.endDate) return;
@@ -96,7 +114,6 @@ export const DressModule = () => {
     const dress = dresses.find(d => d.id === rentalData.dressId);
     if (!dress) return;
 
-    // Calculate duration
     const start = new Date(rentalData.startDate);
     const end = new Date(rentalData.endDate);
     const diffTime = Math.abs(end.getTime() - start.getTime());
@@ -112,473 +129,502 @@ export const DressModule = () => {
       status: 'ACTIVE'
     };
 
-    addRental(newRental);
-    // Keep in same view but reset data to allow printing from list below
-    setRentalData({ ...rentalData, dressId: '', endDate: '' });
+    await addRental(newRental);
+    // Reset and go to rentals
+    setNewClient({ firstName: '', lastName: '', phone: '', cin: '' });
+    setRentalData({ ...rentalData, clientId: '', dressId: '', endDate: '' });
+    setActiveTab('RENTALS');
   };
 
-  const handlePrintRental = (rental: DressRental) => {
-     const client = clients.find(c => c.id === rental.clientId);
-     const dress = dresses.find(d => d.id === rental.dressId);
-     if (!client || !dress) return;
-
-     printReceipt({
-       title: 'عقد كراء فستان',
-       id: rental.id,
-       date: new Date().toISOString().split('T')[0],
-       client: client,
-       total: rental.totalPrice,
-       items: [{ name: `${dress.name} (${dress.reference})`, price: rental.totalPrice }],
-       footerNote: `من ${rental.startDate} إلى ${rental.endDate}. يرجى إعادة الفستان في حالة جيدة.`
-     });
+  const handlePrintRental = (rentalId: string) => {
+     window.open(`/api/dress-rentals/${rentalId}/contract/`, '_blank');
   };
 
-  // --- CRUD HANDLERS FOR DRESSES ---
   const handleSaveDress = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!dressForm.name || !dressForm.reference || !dressForm.pricePerDay) return;
-
     const price = parseFloat(dressForm.pricePerDay);
-    
+    const payload = {
+        id: dressForm.id || crypto.randomUUID(),
+        name: dressForm.name,
+        reference: dressForm.reference,
+        size: dressForm.size,
+        color: dressForm.color,
+        pricePerDay: price,
+        status: dressForm.status
+    };
+
     if (isEditingDress && dressForm.id) {
-      await updateDress({
-        id: dressForm.id,
-        name: dressForm.name,
-        reference: dressForm.reference,
-        size: dressForm.size,
-        color: dressForm.color,
-        pricePerDay: price,
-        status: dressForm.status
-      }, selectedFile || undefined);
-      setIsEditingDress(false);
+      await updateDress(payload, selectedFile || undefined);
     } else {
-      await addDress({
-        id: crypto.randomUUID(),
-        name: dressForm.name,
-        reference: dressForm.reference,
-        size: dressForm.size,
-        color: dressForm.color,
-        pricePerDay: price,
-        status: dressForm.status
-      }, selectedFile || undefined);
+      await addDress(payload, selectedFile || undefined);
     }
+    closeDressForm();
+  };
+
+  const openDressForm = (dress?: Dress) => {
+    if (dress) {
+        setDressForm({ 
+            id: dress.id, 
+            name: dress.name, 
+            reference: dress.reference,
+            size: dress.size, 
+            color: dress.color,
+            pricePerDay: dress.pricePerDay.toString(),
+            status: dress.status
+        });
+        setIsEditingDress(true);
+    } else {
+        setDressForm({ name: '', reference: '', size: '', color: '', pricePerDay: '', status: DressStatus.AVAILABLE });
+        setIsEditingDress(false);
+    }
+    setActiveTab('INVENTORY');
+  };
+
+  const closeDressForm = () => {
+    setIsEditingDress(false);
     setDressForm({ name: '', reference: '', size: '', color: '', pricePerDay: '', status: DressStatus.AVAILABLE });
     setSelectedFile(null);
   };
 
-  const handleEditDressClick = (dress: Dress) => {
-    setDressForm({ 
-      id: dress.id, 
-      name: dress.name, 
-      reference: dress.reference,
-      size: dress.size, 
-      color: dress.color,
-      pricePerDay: dress.pricePerDay.toString(),
-      status: dress.status
-    });
-    setIsEditingDress(true);
-    // Scroll to form if needed
-  };
+  // --- RENDERERS ---
+  
+  // 1. Rentals List View
+  const renderRentalsView = () => (
+    <div className="space-y-4 animate-fade-in">
+       {/* Filters */}
+       <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+          <div className="relative flex-1 w-full">
+            <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+            <input 
+              type="text" 
+              placeholder="بحث باسم العميل أو الفستان..." 
+              className="w-full pl-4 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <div className="flex space-x-2 space-x-reverse w-full sm:w-auto">
+             <button onClick={() => setStatusFilter('ALL')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${statusFilter === 'ALL' ? 'bg-slate-800 text-white' : 'bg-slate-50 text-slate-600'}`}>الكل</button>
+             <button onClick={() => setStatusFilter('ACTIVE')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${statusFilter === 'ACTIVE' ? 'bg-amber-100 text-amber-800' : 'bg-slate-50 text-slate-600'}`}>نشط (لم يرجع)</button>
+             <button onClick={() => setStatusFilter('RETURNED')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${statusFilter === 'RETURNED' ? 'bg-green-100 text-green-800' : 'bg-slate-50 text-slate-600'}`}>مكتمل</button>
+          </div>
+       </div>
 
-  const handleCancelEdit = () => {
-    setIsEditingDress(false);
-    setDressForm({ name: '', reference: '', size: '', color: '', pricePerDay: '', status: DressStatus.AVAILABLE });
+       {/* List */}
+       <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+          <table className="w-full text-sm text-right">
+             <thead className="bg-slate-50 text-slate-500 font-medium">
+               <tr>
+                 <th className="px-6 py-4">العميل</th>
+                 <th className="px-6 py-4">الفستان</th>
+                 <th className="px-6 py-4">الفترة</th>
+                 <th className="px-6 py-4">إجمالي</th>
+                 <th className="px-6 py-4">الحالة</th>
+                 <th className="px-6 py-4 text-left">إجراءات</th>
+               </tr>
+             </thead>
+             <tbody className="divide-y divide-slate-100">
+               {filteredRentals.map(rental => {
+                 const client = clients.find(c => c.id === rental.clientId);
+                 const dress = dresses.find(d => d.id === rental.dressId);
+                 const isActive = rental.status === 'ACTIVE';
+                 return (
+                   <tr key={rental.id} className="hover:bg-slate-50 transition-colors">
+                     <td className="px-6 py-4 font-medium text-slate-900">
+                       {client?.firstName} {client?.lastName}
+                       <div className="text-xs text-slate-400 font-normal">{client?.phone}</div>
+                     </td>
+                     <td className="px-6 py-4 text-slate-700">
+                       <div className="flex items-center">
+                         {dress?.image && <img src={dress.image} className="w-8 h-8 rounded object-cover ml-2" />}
+                         <span>{dress?.name}</span>
+                       </div>
+                       <span className="text-xs text-slate-400">{dress?.reference}</span>
+                     </td>
+                     <td className="px-6 py-4 text-slate-600">
+                       <div className="flex items-center"><Calendar size={12} className="ml-1"/> {rental.startDate}</div>
+                       <div className="flex items-center mt-1"><ArrowLeft size={12} className="ml-1 text-slate-300"/> {rental.endDate}</div>
+                     </td>
+                     <td className="px-6 py-4 font-bold text-indigo-600">{rental.totalPrice} درهم</td>
+                     <td className="px-6 py-4">
+                       <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
+                         isActive ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
+                       }`}>
+                         {isActive ? 'نشط' : 'تم الإرجاع'}
+                       </span>
+                     </td>
+                     <td className="px-6 py-4">
+                       <div className="flex items-center justify-end space-x-2 space-x-reverse">
+                         <button 
+                           onClick={() => handlePrintRental(rental.id)}
+                           className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                           title="طباعة العقد"
+                         >
+                           <Printer size={18} />
+                         </button>
+                         {isActive && (
+                           <button 
+                             onClick={() => returnRental(rental.id)}
+                             className="text-xs bg-slate-800 text-white px-3 py-1.5 rounded hover:bg-slate-700 transition-colors"
+                           >
+                             إرجاع
+                           </button>
+                         )}
+                       </div>
+                     </td>
+                   </tr>
+                 );
+               })}
+               {filteredRentals.length === 0 && (
+                 <tr>
+                   <td colSpan={6} className="px-6 py-12 text-center text-slate-400">
+                     لا توجد عمليات تأجير مطابقة
+                   </td>
+                 </tr>
+               )}
+             </tbody>
+          </table>
+       </div>
+    </div>
+  );
+
+  // 2. Inventory View (Combined Grid + Form Modal)
+  const renderInventoryView = () => (
+    <div className="space-y-6 animate-fade-in">
+       {/* Toolbar */}
+       <div className="flex justify-between items-center">
+         <div className="relative w-64">
+            <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+            <input 
+              type="text" 
+              placeholder="بحث عن فستان..." 
+              className="w-full pl-4 pr-10 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+            />
+         </div>
+         <button 
+           onClick={() => { setIsEditingDress(false); setDressForm({ name: '', reference: '', size: '', color: '', pricePerDay: '', status: DressStatus.AVAILABLE }); }}
+           className="hidden" // Hidden logic trigger
+         />
+       </div>
+
+       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+           {/* Add New Card Button */}
+           <div 
+             onClick={() => openDressForm()}
+             className="border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-6 cursor-pointer hover:border-indigo-400 hover:bg-indigo-50 transition-all text-slate-400 hover:text-indigo-500 min-h-[300px]"
+           >
+              <div className="bg-white p-4 rounded-full shadow-sm mb-4">
+                <Plus size={24} />
+              </div>
+              <span className="font-medium">إضافة فستان جديد</span>
+           </div>
+
+           {/* Dress Cards */}
+           {filteredDresses.map(dress => (
+             <div key={dress.id} className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden flex flex-col group hover:shadow-md transition-all">
+                <div className="h-48 bg-slate-50 relative overflow-hidden">
+                   {dress.image ? (
+                     <img src={dress.image} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                   ) : (
+                     <div className="w-full h-full flex items-center justify-center text-slate-300">
+                       <Shirt size={48} />
+                     </div>
+                   )}
+                   <div className="absolute top-2 right-2">
+                     <span className={`px-2 py-1 rounded-md text-xs font-bold shadow-sm ${
+                        dress.status === DressStatus.AVAILABLE ? 'bg-white/90 text-green-700' : 
+                        dress.status === DressStatus.RENTED ? 'bg-white/90 text-amber-700' : 'bg-white/90 text-red-700'
+                     }`}>
+                       {dress.status === DressStatus.AVAILABLE ? 'متاح' : dress.status === DressStatus.RENTED ? 'مؤجر' : 'صيانة'}
+                     </span>
+                   </div>
+                   {/* Overlay Actions */}
+                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center space-x-2 space-x-reverse">
+                      <button onClick={() => openDressForm(dress)} className="p-2 bg-white rounded-full text-slate-800 hover:text-indigo-600 transition-colors"><Edit2 size={16} /></button>
+                      <button onClick={() => deleteDress(dress.id)} className="p-2 bg-white rounded-full text-slate-800 hover:text-red-600 transition-colors"><Trash2 size={16} /></button>
+                   </div>
+                </div>
+                <div className="p-4 flex-1 flex flex-col">
+                   <div className="flex justify-between items-start mb-2">
+                      <h3 className="font-bold text-slate-800 truncate" title={dress.name}>{dress.name}</h3>
+                   </div>
+                   <p className="text-xs text-slate-500 mb-3 bg-slate-50 w-fit px-2 py-1 rounded">REF: {dress.reference}</p>
+                   
+                   <div className="grid grid-cols-2 gap-2 text-xs text-slate-500 mb-4 mt-auto">
+                     <div><span className="opacity-75">المقاس:</span> <span className="font-medium text-slate-700">{dress.size}</span></div>
+                     <div><span className="opacity-75">اللون:</span> <span className="font-medium text-slate-700">{dress.color}</span></div>
+                   </div>
+                   
+                   <div className="pt-3 border-t border-slate-50 flex justify-between items-center">
+                      <span className="font-bold text-indigo-600 text-lg">{dress.pricePerDay} <span className="text-xs font-normal text-slate-400">درهم</span></span>
+                   </div>
+                </div>
+             </div>
+           ))}
+       </div>
+
+       {/* Modal for Add/Edit Dress (Simple Overlay) */}
+       {(isEditingDress || dressForm.name || dressForm.status !== DressStatus.AVAILABLE && !dressForm.id) && (
+           <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden animate-scale-in">
+                 <div className="p-5 border-b border-slate-100 flex justify-between items-center">
+                    <h3 className="font-bold text-lg text-slate-800">{isEditingDress ? 'تعديل الفستان' : 'إضافة فستان جديد'}</h3>
+                    <button onClick={closeDressForm} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
+                 </div>
+                 <form onSubmit={handleSaveDress} className="p-6">
+                    <div className="flex flex-col md:flex-row gap-6">
+                       <div className="w-full md:w-1/3">
+                          <label className="block text-xs font-medium text-slate-500 mb-2">صورة الفستان</label>
+                          <div className="border-2 border-dashed border-slate-200 rounded-xl h-48 relative flex items-center justify-center cursor-pointer hover:bg-slate-50 transition-colors overflow-hidden">
+                             <input 
+                                type="file" 
+                                accept="image/*"
+                                className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                                onChange={(e) => {
+                                    if (e.target.files && e.target.files[0]) setSelectedFile(e.target.files[0]);
+                                }}
+                             />
+                             {(selectedFile || (dressForm.id && dresses.find(d => d.id === dressForm.id)?.image)) ? (
+                               <img 
+                                 src={selectedFile ? URL.createObjectURL(selectedFile) : dresses.find(d => d.id === dressForm.id)?.image} 
+                                 className="w-full h-full object-cover"
+                               />
+                             ) : (
+                               <div className="text-center p-4">
+                                  <Shirt className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                                  <span className="text-xs text-slate-400">اضغط لرفع صورة</span>
+                               </div>
+                             )}
+                          </div>
+                       </div>
+                       
+                       <div className="flex-1 space-y-4">
+                          <div className="grid grid-cols-2 gap-4">
+                             <div className="col-span-2">
+                               <label className="text-xs font-medium text-slate-500">اسم الفستان</label>
+                               <input required value={dressForm.name} onChange={e => setDressForm({...dressForm, name: e.target.value})} className="w-full mt-1 border border-slate-200 rounded-lg p-2 text-sm" placeholder="مثال: قفطان ملكي" />
+                             </div>
+                             <div>
+                               <label className="text-xs font-medium text-slate-500">المرجع</label>
+                               <input required value={dressForm.reference} onChange={e => setDressForm({...dressForm, reference: e.target.value})} className="w-full mt-1 border border-slate-200 rounded-lg p-2 text-sm" placeholder="REF-001" />
+                             </div>
+                             <div>
+                               <label className="text-xs font-medium text-slate-500">السعر (درهم/يوم)</label>
+                               <input required type="number" value={dressForm.pricePerDay} onChange={e => setDressForm({...dressForm, pricePerDay: e.target.value})} className="w-full mt-1 border border-slate-200 rounded-lg p-2 text-sm" placeholder="0" />
+                             </div>
+                             <div>
+                               <label className="text-xs font-medium text-slate-500">المقاس</label>
+                               <input value={dressForm.size} onChange={e => setDressForm({...dressForm, size: e.target.value})} className="w-full mt-1 border border-slate-200 rounded-lg p-2 text-sm" placeholder="38, 40..." />
+                             </div>
+                             <div>
+                               <label className="text-xs font-medium text-slate-500">اللون</label>
+                               <input value={dressForm.color} onChange={e => setDressForm({...dressForm, color: e.target.value})} className="w-full mt-1 border border-slate-200 rounded-lg p-2 text-sm" placeholder="أبيض..." />
+                             </div>
+                             <div className="col-span-2">
+                               <label className="text-xs font-medium text-slate-500">الحالة</label>
+                               <select value={dressForm.status} onChange={e => setDressForm({...dressForm, status: e.target.value as DressStatus})} className="w-full mt-1 border border-slate-200 rounded-lg p-2 text-sm">
+                                  <option value={DressStatus.AVAILABLE}>متاح</option>
+                                  <option value={DressStatus.RENTED}>مؤجر</option>
+                                  <option value={DressStatus.MAINTENANCE}>صيانة</option>
+                               </select>
+                             </div>
+                          </div>
+                       </div>
+                    </div>
+                    <div className="mt-6 flex justify-end space-x-3 space-x-reverse">
+                       <button type="button" onClick={closeDressForm} className="px-4 py-2 text-slate-600 bg-slate-100 rounded-lg text-sm hover:bg-slate-200 transition-colors">إلغاء</button>
+                       <button type="submit" className="px-6 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-600/20">حفظ الفستان</button>
+                    </div>
+                 </form>
+              </div>
+           </div>
+       )}
+    </div>
+  );
+
+  // 3. New Rental Flow
+  const renderNewRental = () => {
+     const selectedRefDress = dresses.find(d => d.id === rentalData.dressId);
+     const isAvailable = rentalData.dressId && rentalData.endDate ? isDressAvailable(rentalData.dressId, rentalData.startDate, rentalData.endDate) : null;
+
+     return (
+       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-fade-in">
+          {/* Left Column: Input Form */}
+          <div className="lg:col-span-2 space-y-6">
+             {/* 1. Client Selection */}
+             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                <div className="flex items-center mb-4">
+                   <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold ml-3">1</div>
+                   <h3 className="font-bold text-slate-800">بيانات العميل</h3>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                   <div className="md:col-span-2">
+                     <label className="block text-xs font-medium text-slate-500 mb-1">بحث عن عميل مسجل</label>
+                     <select 
+                        value={rentalData.clientId} 
+                        onChange={e => setRentalData({...rentalData, clientId: e.target.value})}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-indigo-500 outline-none"
+                     >
+                        <option value="">-- عميل جديد --</option>
+                        {dressClients.map(c => <option key={c.id} value={c.id}>{c.firstName} {c.lastName} ({c.phone})</option>)}
+                     </select>
+                   </div>
+                   
+                   {!rentalData.clientId && (
+                      <div className="md:col-span-2 grid grid-cols-2 gap-4 pt-4 border-t border-slate-100 mt-2">
+                          <input placeholder="الاسم الأول" className="bg-white border rounded-lg p-2 text-sm" value={newClient.firstName} onChange={e => setNewClient({...newClient, firstName: e.target.value})} />
+                          <input placeholder="الاسم العائلي" className="bg-white border rounded-lg p-2 text-sm" value={newClient.lastName} onChange={e => setNewClient({...newClient, lastName: e.target.value})} />
+                          <input placeholder="الهاتف" className="bg-white border rounded-lg p-2 text-sm" value={newClient.phone} onChange={e => setNewClient({...newClient, phone: e.target.value})} />
+                          <input placeholder="رقم البطاقة (CIN)" className="bg-white border rounded-lg p-2 text-sm" value={newClient.cin} onChange={e => setNewClient({...newClient, cin: e.target.value})} />
+                      </div>
+                   )}
+                </div>
+             </div>
+
+             {/* 2. Dress & Dates */}
+             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                <div className="flex items-center mb-4">
+                   <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold ml-3">2</div>
+                   <h3 className="font-bold text-slate-800">الفستان والتاريخ</h3>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                   <div>
+                      <label className="block text-xs font-medium text-slate-500 mb-1">اختر الفستان</label>
+                      <select 
+                        value={rentalData.dressId} 
+                        onChange={e => setRentalData({...rentalData, dressId: e.target.value})}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-indigo-500 outline-none"
+                     >
+                         <option value="">-- اختر من القائمة --</option>
+                         {dresses.filter(d => d.status === DressStatus.AVAILABLE || d.status === DressStatus.RENTED).map(d => (
+                            <option key={d.id} value={d.id}>{d.name} - {d.reference} ({d.size})</option>
+                         ))}
+                      </select>
+                   </div>
+                   
+                   <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">تاريخ البدء</label>
+                        <input type="date" value={rentalData.startDate} onChange={e => setRentalData({...rentalData, startDate: e.target.value})} className="w-full bg-white border rounded-lg p-2 text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">تاريخ الإرجاع</label>
+                        <input type="date" value={rentalData.endDate} onChange={e => setRentalData({...rentalData, endDate: e.target.value})} className="w-full bg-white border rounded-lg p-2 text-sm" />
+                      </div>
+                   </div>
+                </div>
+
+                {/* Availability Status */}
+                {selectedRefDress && rentalData.endDate && (
+                   <div className={`mt-6 p-4 rounded-xl flex items-start gap-3 ${isAvailable ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
+                      {isAvailable ? <CheckCircle className="w-5 h-5 shrink-0 mt-0.5" /> : <XCircle className="w-5 h-5 shrink-0 mt-0.5" />}
+                      <div>
+                         <p className="font-bold text-sm block">{isAvailable ? 'الفستان متاح!' : 'الفستان غير متاح'}</p>
+                         <p className="text-xs opacity-80 mt-1">
+                            {isAvailable 
+                              ? `يمكنك حجز "${selectedRefDress.name}" في هذه الفترة.` 
+                              : `هذا الفستان محجوز بالفعل في تاريخ واحد أو أكثر ضمن الفترة المحددة.`}
+                         </p>
+                      </div>
+                   </div>
+                )}
+             </div>
+          </div>
+
+          {/* Right Column: Summary & Action */}
+          <div className="lg:col-span-1">
+             <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-xl sticky top-6">
+                <h3 className="font-bold text-lg mb-6 flex items-center"><Calendar className="ml-2 w-5 h-5" /> ملخص الحجز</h3>
+                
+                <div className="space-y-4 mb-8">
+                   <div className="flex justify-between text-sm py-2 border-b border-slate-700">
+                      <span className="text-slate-400">الفستان</span>
+                      <span className="font-medium">{selectedRefDress?.name || '-'}</span>
+                   </div>
+                   <div className="flex justify-between text-sm py-2 border-b border-slate-700">
+                      <span className="text-slate-400">السعر اليومي</span>
+                      <span className="font-medium">{selectedRefDress?.pricePerDay || 0} درهم</span>
+                   </div>
+                   <div className="flex justify-between text-sm py-2 border-b border-slate-700">
+                      <span className="text-slate-400">عدد الأيام</span>
+                      <span className="font-medium">
+                        {rentalData.endDate ? (Math.ceil(Math.abs(new Date(rentalData.endDate).getTime() - new Date(rentalData.startDate).getTime()) / (1000 * 60 * 60 * 24)) || 1) : 0}
+                      </span>
+                   </div>
+                   <div className="flex justify-between text-lg font-bold pt-2 text-indigo-400">
+                      <span>الإجمالي</span>
+                      <span>
+                         {selectedRefDress && rentalData.endDate ? 
+                           (selectedRefDress.pricePerDay * (Math.ceil(Math.abs(new Date(rentalData.endDate).getTime() - new Date(rentalData.startDate).getTime()) / (1000 * 60 * 60 * 24)) || 1)) 
+                           : 0} درهم
+                      </span>
+                   </div>
+                </div>
+
+                <button 
+                  onClick={handleRent}
+                  disabled={!isAvailable || (!rentalData.clientId && (!newClient.firstName || !newClient.lastName))}
+                  className="w-full bg-indigo-500 hover:bg-indigo-600 disabled:bg-slate-700 disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold transition-all shadow-lg shadow-indigo-500/20"
+                >
+                   تأكيد وإنشاء العقد
+                </button>
+                <p className="text-xs text-center text-slate-500 mt-4">سيتم إنشاء العقد وتحديث المخزون تلقائياً</p>
+             </div>
+          </div>
+       </div>
+     );
   };
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-        <div>
-          <h2 className="text-xl font-bold text-slate-800 flex items-center">
-            <Shirt className="ml-2 text-indigo-500" /> تأجير الفساتين
-          </h2>
-          <p className="text-sm text-slate-500">إدارة المخزون وتأجير الفساتين</p>
-        </div>
-        <div className="flex space-x-2 space-x-reverse">
-            <button 
-              onClick={() => setView('SETTINGS')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center ${view === 'SETTINGS' ? 'bg-slate-100 text-slate-800' : 'text-slate-600 hover:bg-slate-50'}`}
-            >
-              <Settings className="w-4 h-4 ml-2" />
-              الإعدادات
-            </button>
-            <button 
-              onClick={() => setView('INVENTORY')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${view === 'INVENTORY' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}
-            >
-              المخزون
-            </button>
-            <button 
-              onClick={() => setView('NEW_RENTAL')}
-              className="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-            >
-              تأجير جديد
-            </button>
-        </div>
+      {/* Header & Tabs */}
+      <div className="bg-white p-2 rounded-2xl shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
+          <div className="flex items-center space-x-2 space-x-reverse px-4 py-2">
+             <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600">
+                <Shirt size={20} />
+             </div>
+             <div>
+                <h2 className="font-bold text-slate-800">تأجير الفساتين</h2>
+                <div className="flex space-x-2 space-x-reverse text-xs text-slate-500">
+                   <span>{rentals.filter(r => r.status === 'ACTIVE').length} تأجير نشط</span>
+                   <span>•</span>
+                   <span>{dresses.length} فستان</span>
+                </div>
+             </div>
+          </div>
+          
+          <div className="flex bg-slate-50 p-1 rounded-xl w-full md:w-auto">
+              {[
+                { id: 'RENTALS', label: 'العمليات', icon: History },
+                { id: 'INVENTORY', label: 'المخزون', icon:  Settings},
+                { id: 'NEW_RENTAL', label: 'تأجير جديد', icon: Plus },
+              ].map(tab => {
+                 const Icon = tab.icon;
+                 const isActive = activeTab === tab.id;
+                 return (
+                   <button
+                     key={tab.id}
+                     onClick={() => setActiveTab(tab.id as any)}
+                     className={`flex-1 md:flex-none flex items-center justify-center px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                        isActive ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                     }`}
+                   >
+                     <Icon size={14} className="ml-2" />
+                     {tab.label}
+                   </button>
+                 );
+              })}
+          </div>
       </div>
 
-      {/* --- VIEW: SETTINGS (CRUD) --- */}
-      {view === 'SETTINGS' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
-          {/* Dress List */}
-          <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-             <div className="p-4 border-b border-slate-100 flex justify-between items-center">
-               <h3 className="font-semibold text-slate-700">قائمة الفساتين</h3>
-               <div className="text-xs text-slate-500 bg-slate-50 px-2 py-1 rounded">
-                 إجمالي: {dresses.length}
-               </div>
-             </div>
-             <div className="overflow-x-auto">
-               <table className="w-full text-sm text-right">
-                  <thead className="text-xs text-slate-500 uppercase bg-slate-50">
-                    <tr>
-                      <th className="px-6 py-3">الصورة / الاسم</th>
-                      <th className="px-6 py-3">المرجع</th>
-                      <th className="px-6 py-3">المقاس</th>
-                      <th className="px-6 py-3">السعر/يوم</th>
-                      <th className="px-6 py-3">الحالة</th>
-                      <th className="px-6 py-3 text-left">إجراءات</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dresses.map(dress => (
-                      <tr key={dress.id} className="border-b border-slate-50 hover:bg-slate-50 last:border-0">
-                        <td className="px-6 py-4 font-medium text-slate-900 flex items-center space-x-3 space-x-reverse">
-                          <div className="w-8 h-8 rounded bg-slate-100 flex items-center justify-center ml-2 overflow-hidden">
-                             {dress.image ? <img src={dress.image} className="w-full h-full object-cover"/> : <Shirt size={16} className="text-slate-400" />}
-                          </div>
-                          <span>{dress.name}</span>
-                        </td>
-                        <td className="px-6 py-4 text-slate-500">{dress.reference}</td>
-                        <td className="px-6 py-4 text-slate-700">{dress.size}</td>
-                        <td className="px-6 py-4 text-indigo-600 font-bold">{dress.pricePerDay}</td>
-                        <td className="px-6 py-4">
-                          <span className={`text-xs px-2 py-1 rounded font-medium ${
-                            dress.status === DressStatus.AVAILABLE ? 'bg-green-100 text-green-700' :
-                            dress.status === DressStatus.RENTED ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
-                          }`}>
-                            {dress.status === DressStatus.AVAILABLE ? 'متاح' : dress.status === DressStatus.RENTED ? 'مؤجر' : 'صيانة'}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-left flex justify-end space-x-3 space-x-reverse">
-                           <button onClick={() => handleEditDressClick(dress)} className="text-indigo-400 hover:text-indigo-600 ml-3">
-                             <Edit2 className="w-4 h-4" />
-                           </button>
-                           <button onClick={() => deleteDress(dress.id)} className="text-red-400 hover:text-red-600">
-                             <Trash2 className="w-4 h-4" />
-                           </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-               </table>
-             </div>
-          </div>
-
-          {/* Add/Edit Form */}
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 h-fit">
-            <h3 className="font-semibold text-slate-700 mb-4">
-              {isEditingDress ? 'تعديل الفستان' : 'إضافة فستان جديد'}
-            </h3>
-            <form onSubmit={handleSaveDress} className="space-y-4">
-               
-               <div className="flex flex-col md:flex-row gap-6">
-                 
-                 {/* Image Upload Section - Side */}
-                 <div className="w-full md:w-1/3 order-1 md:order-2">
-                    <label className="block text-xs font-medium text-slate-500 mb-2">صورة الفستان</label>
-                    <div className="border-2 border-dashed border-slate-200 rounded-xl p-4 flex flex-col items-center justify-center bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer relative group h-48">
-                        <input 
-                          type="file" 
-                          accept="image/*"
-                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                          onChange={(e) => {
-                              if (e.target.files && e.target.files[0]) {
-                                  setSelectedFile(e.target.files[0]);
-                              }
-                          }}
-                        />
-                        {(selectedFile || (isEditingDress && dressForm.id && dresses.find(d => d.id === dressForm.id)?.image)) ? (
-                            <img 
-                              src={selectedFile ? URL.createObjectURL(selectedFile) : dresses.find(d => d.id === dressForm.id)?.image} 
-                              alt="Preview" 
-                              className="w-full h-full object-cover rounded-lg" 
-                            />
-                        ) : (
-                            <div className="text-center">
-                                <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-2 group-hover:scale-110 transition-transform">
-                                  <Shirt className="w-5 h-5" />
-                                </div>
-                                <p className="text-xs text-slate-500 font-medium">اضغط لرفع صورة</p>
-                                <p className="text-[10px] text-slate-400 mt-1">PNG, JPG up to 5MB</p>
-                            </div>
-                        )}
-                    </div>
-                 </div>
-
-                 {/* Form Fields Section */}
-                 <div className="flex-1 space-y-4 order-2 md:order-1">
-                   <div>
-                      <label className="block text-xs font-medium text-slate-500 mb-1">اسم الفستان</label>
-                      <input 
-                        required 
-                        type="text" 
-                        placeholder="مثال: قفطان ملكي"
-                        className="w-full bg-white text-slate-900 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-indigo-500 outline-none placeholder-slate-400" 
-                        value={dressForm.name}
-                        onChange={(e) => setDressForm({...dressForm, name: e.target.value})}
-                      />
-                   </div>
-
-                   <div className="grid grid-cols-2 gap-3">
-                     <div>
-                        <label className="block text-xs font-medium text-slate-500 mb-1">المرجع</label>
-                        <input 
-                          required 
-                          type="text" 
-                          placeholder="REF-001"
-                          className="w-full bg-white text-slate-900 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-indigo-500 outline-none placeholder-slate-400" 
-                          value={dressForm.reference}
-                          onChange={(e) => setDressForm({...dressForm, reference: e.target.value})}
-                        />
-                     </div>
-                     <div>
-                        <label className="block text-xs font-medium text-slate-500 mb-1">السعر / يوم</label>
-                        <input 
-                          required 
-                          type="number" 
-                          placeholder="0"
-                          className="w-full bg-white text-slate-900 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-indigo-500 outline-none placeholder-slate-400" 
-                          value={dressForm.pricePerDay}
-                          onChange={(e) => setDressForm({...dressForm, pricePerDay: e.target.value})}
-                        />
-                     </div>
-                   </div>
-
-                   <div className="grid grid-cols-2 gap-3">
-                     <div>
-                        <label className="block text-xs font-medium text-slate-500 mb-1">المقاس</label>
-                        <input 
-                          type="text" 
-                          placeholder="38, 40, M, L"
-                          className="w-full bg-white text-slate-900 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-indigo-500 outline-none placeholder-slate-400" 
-                          value={dressForm.size}
-                          onChange={(e) => setDressForm({...dressForm, size: e.target.value})}
-                        />
-                     </div>
-                     <div>
-                        <label className="block text-xs font-medium text-slate-500 mb-1">اللون</label>
-                        <input 
-                          type="text" 
-                          placeholder="أبيض, أحمر..."
-                          className="w-full bg-white text-slate-900 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-indigo-500 outline-none placeholder-slate-400" 
-                          value={dressForm.color}
-                          onChange={(e) => setDressForm({...dressForm, color: e.target.value})}
-                        />
-                     </div>
-                   </div>
-                   
-                   <div>
-                      <label className="block text-xs font-medium text-slate-500 mb-1">الحالة</label>
-                      <select 
-                        className="w-full bg-white text-slate-900 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-indigo-500"
-                        value={dressForm.status}
-                        onChange={(e) => setDressForm({...dressForm, status: e.target.value as DressStatus})}
-                      >
-                        <option value={DressStatus.AVAILABLE}>متاح</option>
-                        <option value={DressStatus.RENTED}>مؤجر</option>
-                        <option value={DressStatus.MAINTENANCE}>في الصيانة</option>
-                      </select>
-                   </div>
-                 </div>
-               </div>
-
-               <div className="flex space-x-2 space-x-reverse pt-4 border-t border-slate-50 mt-4">
-                 {isEditingDress && (
-                   <button 
-                    type="button" 
-                    onClick={() => {
-                      setIsEditingDress(false);
-                      setDressForm({ name: '', reference: '', size: '', color: '', pricePerDay: '', status: DressStatus.AVAILABLE });
-                      setSelectedFile(null);
-                    }}
-                    className="flex-1 bg-slate-100 text-slate-600 py-2.5 rounded-lg text-sm font-medium hover:bg-slate-200 transition-colors flex justify-center items-center ml-2"
-                   >
-                     <X className="w-4 h-4 ml-1" /> إلغاء
-                   </button>
-                 )}
-                 <button 
-                  type="submit" 
-                  className="flex-1 bg-slate-900 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors shadow-lg shadow-slate-900/10 flex justify-center items-center"
-                 >
-                   {isEditingDress ? <><Save className="w-4 h-4 ml-2" /> تحديث</> : <><Plus className="w-4 h-4 ml-2" /> إضافة</>}
-                 </button>
-               </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {view === 'INVENTORY' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {dresses.map(dress => (
-            <div key={dress.id} className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden flex flex-col hover:shadow-md transition-shadow">
-              <div className="h-72 bg-slate-50 flex items-center justify-center relative group">
-                 {dress.image ? (
-                   <img src={dress.image} alt={dress.name} className="w-full h-full object-contain p-2 transition-transform group-hover:scale-105" />
-                 ) : (
-                   <Shirt className="w-16 h-16 text-slate-300" />
-                 )}
-                 <span className={`absolute top-2 right-2 px-2.5 py-1 rounded-full text-xs font-bold shadow-sm ${
-                   dress.status === DressStatus.AVAILABLE ? 'bg-green-100 text-green-700' : 
-                   dress.status === DressStatus.RENTED ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
-                 }`}>
-                   {dress.status === DressStatus.AVAILABLE ? 'متاح' : dress.status === DressStatus.RENTED ? 'مؤجر' : 'صيانة'}
-                 </span>
-              </div>
-              <div className="p-4 flex-1 flex flex-col">
-                <div className="flex justify-between items-start mb-2">
-                   <h3 className="font-bold text-slate-800">{dress.name}</h3>
-                   <span className="text-xs bg-slate-100 px-2 py-1 rounded text-slate-600">{dress.reference}</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-sm text-slate-500 mb-4">
-                  <span>المقاس: {dress.size}</span>
-                  <span>اللون: {dress.color}</span>
-                </div>
-                <div className="mt-auto flex justify-between items-center border-t border-slate-50 pt-3">
-                  <span className="font-bold text-indigo-600">{dress.pricePerDay} درهم<span className="text-xs text-slate-400 font-normal">/يوم</span></span>
-                  <button onClick={() => { setRentalData({...rentalData, dressId: dress.id}); setView('NEW_RENTAL'); }} className="text-indigo-500 text-sm font-medium hover:underline">استئجار</button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {view === 'NEW_RENTAL' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-           {/* Client Selection / Creation */}
-           <div className="lg:col-span-1 bg-white p-6 rounded-xl shadow-sm border border-slate-100 h-fit">
-              <h3 className="font-semibold text-slate-700 mb-4">العميل</h3>
-              
-              <div className="mb-6">
-                 <label className="block text-xs font-medium text-slate-500 mb-1">اختر عميل حالي</label>
-                 <select 
-                  className="w-full bg-white text-slate-900 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-indigo-500"
-                  value={rentalData.clientId}
-                  onChange={(e) => setRentalData({...rentalData, clientId: e.target.value})}
-                 >
-                   <option value="">-- عميل جديد --</option>
-                   {dressClients.map(c => <option key={c.id} value={c.id}>{c.firstName} {c.lastName}</option>)}
-                 </select>
-              </div>
-
-              {!rentalData.clientId && (
-                <form onSubmit={handleCreateClient} className="space-y-3 pt-4 border-t border-slate-50">
-                  <p className="text-xs font-bold text-slate-400 uppercase">إضافة عميل جديد</p>
-                  <input required placeholder="الاسم الأول" className="w-full bg-white text-slate-900 border p-2 rounded text-sm placeholder-slate-400" value={newClient.firstName} onChange={e => setNewClient({...newClient, firstName: e.target.value})} />
-                  <input required placeholder="الاسم العائلي" className="w-full bg-white text-slate-900 border p-2 rounded text-sm placeholder-slate-400" value={newClient.lastName} onChange={e => setNewClient({...newClient, lastName: e.target.value})} />
-                  <input required placeholder="رقم البطاقة (CIN)" className="w-full bg-white text-slate-900 border p-2 rounded text-sm placeholder-slate-400" value={newClient.cin} onChange={e => setNewClient({...newClient, cin: e.target.value})} />
-                  <input required placeholder="الهاتف" className="w-full bg-white text-slate-900 border p-2 rounded text-sm placeholder-slate-400" value={newClient.phone} onChange={e => setNewClient({...newClient, phone: e.target.value})} />
-                  <button className="w-full bg-slate-800 text-white text-sm py-2 rounded hover:bg-slate-700">حفظ</button>
-                </form>
-              )}
-           </div>
-
-           {/* Rental Details */}
-           <div className="lg:col-span-2 space-y-6">
-             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-                <h3 className="font-semibold text-slate-700 mb-4">تفاصيل الاستئجار</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                  <div>
-                      <label className="block text-xs font-medium text-slate-500 mb-1">الفستان</label>
-                      <select 
-                        className="w-full bg-white text-slate-900 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-indigo-500"
-                        value={rentalData.dressId}
-                        onChange={(e) => setRentalData({...rentalData, dressId: e.target.value})}
-                      >
-                        <option value="">-- اختر فستان --</option>
-                        {dresses.map(d => <option key={d.id} value={d.id}>{d.name} ({d.size}) - {d.pricePerDay} درهم</option>)}
-                      </select>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-xs font-medium text-slate-500 mb-1">من</label>
-                        <input type="date" className="w-full bg-white text-slate-900 border border-slate-200 rounded-lg px-2 py-2 text-sm text-right" 
-                          value={rentalData.startDate} onChange={e => setRentalData({...rentalData, startDate: e.target.value})} />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-slate-500 mb-1">إلى</label>
-                        <input type="date" className="w-full bg-white text-slate-900 border border-slate-200 rounded-lg px-2 py-2 text-sm text-right" 
-                          value={rentalData.endDate} onChange={e => setRentalData({...rentalData, endDate: e.target.value})} />
-                      </div>
-                  </div>
-                </div>
-
-                {/* Availability Check UI */}
-                {rentalData.dressId && rentalData.endDate && (
-                  <div className={`p-4 rounded-lg mb-6 flex items-center ${isDressAvailable(rentalData.dressId, rentalData.startDate, rentalData.endDate) ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                    {isDressAvailable(rentalData.dressId, rentalData.startDate, rentalData.endDate) ? (
-                      <>
-                        <CheckCircle className="w-5 h-5 ml-2" />
-                        <div>
-                          <p className="font-bold text-sm">متاح!</p>
-                          <p className="text-xs">هذا الفستان متاح في هذه التواريخ.</p>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <XCircle className="w-5 h-5 ml-2" />
-                        <div>
-                          <p className="font-bold text-sm">غير متاح</p>
-                          <p className="text-xs">هذا الفستان محجوز في هذه الفترة.</p>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
-
-                <div className="flex justify-end">
-                  <button 
-                    onClick={handleRent}
-                    disabled={!isDressAvailable(rentalData.dressId, rentalData.startDate, rentalData.endDate) || (!rentalData.clientId && (!newClient.firstName || !newClient.lastName))}
-                    className="bg-indigo-600 disabled:bg-indigo-300 text-white px-6 py-2.5 rounded-lg font-medium transition-colors"
-                  >
-                    تأكيد الحجز
-                  </button>
-                </div>
-             </div>
-
-             {/* Recent Rentals / Quick Print */}
-             <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-                <div className="p-4 bg-slate-50 border-b border-slate-100">
-                  <h3 className="font-semibold text-slate-700">عمليات التأجير الأخيرة</h3>
-                </div>
-                <div className="divide-y divide-slate-100">
-                   {rentals.slice(-5).reverse().map(rental => {
-                     const client = clients.find(c => c.id === rental.clientId);
-                     const dress = dresses.find(d => d.id === rental.dressId);
-                     return (
-                       <div key={rental.id} className="p-4 flex justify-between items-center">
-                         <div>
-                            <p className="text-sm font-bold text-slate-800">{client?.firstName} {client?.lastName}</p>
-                            <p className="text-xs text-slate-500">{dress?.name} • {rental.startDate}</p>
-                         </div>
-                         <button 
-                           onClick={() => handlePrintRental(rental)}
-                           className="text-indigo-500 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg text-xs font-medium flex items-center"
-                         >
-                           <Printer className="w-3 h-3 ml-2" /> تحميل PDF
-                         </button>
-                       </div>
-                     );
-                   })}
-                </div>
-             </div>
-           </div>
-        </div>
-      )}
+      {/* Content */}
+      {activeTab === 'RENTALS' && renderRentalsView()}
+      {activeTab === 'INVENTORY' && renderInventoryView()}
+      {activeTab === 'NEW_RENTAL' && renderNewRental()}
     </div>
   );
 };

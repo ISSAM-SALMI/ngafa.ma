@@ -52,6 +52,9 @@ export const Layout = ({ children, currentView, onViewChange }: {
           <NavItem view="SALON" icon={Scissors} label="صالون الحلاقة" />
           <NavItem view="DRESSES" icon={Shirt} label="تأجير الفساتين" />
           <NavItem view="NGAFA" icon={Package} label="نكافة ومناسبات" />
+          
+          <div className="pt-4 pb-2 px-4 text-xs font-bold text-slate-600 uppercase">بيانات</div>
+          <NavItem view="CLIENTS" icon={Users} label="العملاء" />
 
           {/* Admin Only Section */}
           {user?.role === UserRole.ADMIN && (
@@ -103,6 +106,7 @@ export const Layout = ({ children, currentView, onViewChange }: {
                <NavItem view="SALON" icon={Scissors} label="صالون الحلاقة" />
                <NavItem view="DRESSES" icon={Shirt} label="تأجير الفساتين" />
                <NavItem view="NGAFA" icon={Package} label="نكافة ومناسبات" />
+               <NavItem view="CLIENTS" icon={Users} label="العملاء" />
                
                {user?.role === UserRole.ADMIN && (
                  <NavItem view="USERS" icon={Users} label="المستخدمين" />

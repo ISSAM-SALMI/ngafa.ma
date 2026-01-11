@@ -93,7 +93,7 @@ export const AppProvider = ({ children }: { children?: ReactNode }) => {
     if (!token) return;
     const headers = { 'Authorization': `Token ${token}` };
     try {
-        const [cRes, sRes, vRes, dRes, rRes, nRes, eRes] = await Promise.all([
+        const [cRes, sRes, vRes, dRes, rRes, nRes, eRes, uRes] = await Promise.all([
             fetch(`${API_URL}/clients/`, { headers }),
             fetch(`${API_URL}/salon-services/`, { headers }),
             fetch(`${API_URL}/salon-visits/`, { headers }),
@@ -101,6 +101,7 @@ export const AppProvider = ({ children }: { children?: ReactNode }) => {
             fetch(`${API_URL}/dress-rentals/`, { headers }),
             fetch(`${API_URL}/ngafa-items/`, { headers }),
             fetch(`${API_URL}/ngafa-events/`, { headers }),
+            fetch(`${API_URL}/users/`, { headers }),
         ]);
 
         if (cRes.ok) {
@@ -187,6 +188,15 @@ export const AppProvider = ({ children }: { children?: ReactNode }) => {
                  }))
              })));
         }
+        if (uRes.ok) {
+            const data = await uRes.json();
+            setUsersList(data.map((u: any) => ({
+                id: u.id.toString(),
+                username: u.username,
+                name: u.first_name || u.username,
+                role: u.is_superuser ? 'ADMIN' : 'EMPLOYEE'
+            })));
+        }
         
     } catch (error) {
         console.error("Failed to fetch data:", error);
@@ -259,13 +269,33 @@ export const AppProvider = ({ children }: { children?: ReactNode }) => {
      return null;
   };
 
-  // User Management (Admin only usually, simplified here)
+  // User Management
   const addUser = async (newUser: User) => {
-    // Note: Creating users usually requires separate auth flow
-    setUsersList(prev => [...prev, newUser]);
+    const payload = {
+        username: newUser.username,
+        password: newUser.password,
+        first_name: newUser.name,
+        is_staff: true, 
+        is_superuser: newUser.role === UserRole.ADMIN
+    };
+    
+    const saved = await apiCall('users', 'POST', payload);
+    if (saved) {
+        const mappedUser: User = {
+            id: saved.id.toString(),
+            username: saved.username,
+            name: saved.first_name || saved.username,
+            role: saved.is_superuser ? UserRole.ADMIN : UserRole.EMPLOYEE
+        };
+        setUsersList(prev => [...prev, mappedUser]);
+    }
   };
+  
   const deleteUser = async (id: string) => {
-    setUsersList(prev => prev.filter(u => u.id !== id));
+    const deleted = await apiCall(`users/${id}`, 'DELETE');
+    if (deleted) {
+        setUsersList(prev => prev.filter(u => u.id !== id));
+    }
   };
 
   // Client CRUD
