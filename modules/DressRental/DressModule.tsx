@@ -33,6 +33,7 @@ export const DressModule = () => {
 
   // --- Dress Form State ---
   const [isEditingDress, setIsEditingDress] = useState(false);
+  const [isFormVisible, setIsFormVisible] = useState(false);
   const [dressForm, setDressForm] = useState<{
     id?: string, 
     name: string, 
@@ -177,11 +178,13 @@ export const DressModule = () => {
         setDressForm({ name: '', reference: '', size: '', color: '', pricePerDay: '', status: DressStatus.AVAILABLE });
         setIsEditingDress(false);
     }
+    setIsFormVisible(true);
     setActiveTab('INVENTORY');
   };
 
   const closeDressForm = () => {
     setIsEditingDress(false);
+    setIsFormVisible(false);
     setDressForm({ name: '', reference: '', size: '', color: '', pricePerDay: '', status: DressStatus.AVAILABLE });
     setSelectedFile(null);
   };
@@ -366,7 +369,7 @@ export const DressModule = () => {
        </div>
 
        {/* Modal for Add/Edit Dress (Simple Overlay) */}
-       {(isEditingDress || dressForm.name || dressForm.status !== DressStatus.AVAILABLE && !dressForm.id) && (
+       {isFormVisible && (
            <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
               <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden animate-scale-in">
                  <div className="p-5 border-b border-slate-100 flex justify-between items-center">

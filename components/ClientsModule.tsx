@@ -105,7 +105,8 @@ export const ClientsModule = () => {
                       </td>
                       <td className="px-6 py-4 text-slate-600">
                          <div className="flex items-center"><Phone size={12} className="ml-1 opacity-50"/> {client.phone}</div>
-                         {client.cin && <div className="flex items-center mt-1 text-xs"><FileText size={12} className="ml-1 opacity-50"/> {client.cin}</div>}
+                         {client.cin && <div className="flex items-center mt-1 text-xs"><FileText size={12} className="ml-1 opacity-50"/> CIN: {client.cin}</div>}
+                         {client.ice && <div className="flex items-center mt-1 text-xs text-blue-600"><FileText size={12} className="ml-1 opacity-50"/> ICE: {client.ice}</div>}
                       </td>
                       <td className="px-6 py-4">
                         <span className={`px-2 py-1 rounded-md text-xs font-bold ${badge.color}`}>
