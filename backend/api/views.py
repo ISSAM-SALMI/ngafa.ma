@@ -66,6 +66,9 @@ class NgafaBookingItemViewSet(viewsets.ModelViewSet):
     serializer_class = NgafaBookingItemSerializer
 
 
+from django.views.decorators.csrf import csrf_exempt
+
+@csrf_exempt
 @api_view(['POST'])
 @permission_classes([permissions.AllowAny])
 def login_view(request):
