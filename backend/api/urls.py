@@ -5,6 +5,7 @@ from .views import (
     UserViewSet, ClientViewSet, SalonServiceViewSet, SalonVisitViewSet,
     DressViewSet, DressRentalViewSet, NgafaItemViewSet, NgafaEventViewSet,
     current_user, NgafaBookingItemViewSet, download_contract_pdf,
+    login_view,
     download_salon_visit_pdf, download_dress_rental_pdf
 )
 
@@ -21,7 +22,7 @@ router.register(r'ngafa-booking-items', NgafaBookingItemViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),
-    path('auth/login/', obtain_auth_token),
+    path('auth/login/', login_view),
     path('auth/me/', current_user),
     path('current-user/', current_user),
     path('api-token-auth/', obtain_auth_token),

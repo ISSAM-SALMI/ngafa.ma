@@ -2,7 +2,9 @@ from rest_framework import viewsets, permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from django.contrib.auth.models import User
+from django.contrib.auth import authenticate
 from django.http import HttpResponse
+from rest_framework.authtoken.models import Token
 from .models import (
     Client, SalonService, SalonVisit, Dress, DressRental,
     NgafaItem, NgafaEvent, NgafaBookingItem
@@ -62,6 +64,36 @@ class NgafaEventViewSet(viewsets.ModelViewSet):
 class NgafaBookingItemViewSet(viewsets.ModelViewSet):
     queryset = NgafaBookingItem.objects.all()
     serializer_class = NgafaBookingItemSerializer
+
+
+@api_view(['POST'])
+@permission_classes([permissions.AllowAny])
+def login_view(request):
+    username = request.data.get('username', '')
+    password = request.data.get('password', '')
+
+    if not username or not password:
+        return Response({'detail': 'Username and password are required.'}, status=400)
+
+    # Try direct username authentication first.
+    user = authenticate(request, username=username, password=password)
+
+    # If that fails, allow login by email.
+    if user is None and '@' in username:
+        try:
+            email_user = User.objects.get(email__iexact=username)
+            user = authenticate(request, username=email_user.username, password=password)
+        except User.DoesNotExist:
+            user = None
+
+    if user is None:
+        return Response({'detail': 'Invalid credentials.'}, status=400)
+
+    if not user.is_active:
+        return Response({'detail': 'User account is disabled.'}, status=403)
+
+    token, _ = Token.objects.get_or_create(user=user)
+    return Response({'token': token.key})
 
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
