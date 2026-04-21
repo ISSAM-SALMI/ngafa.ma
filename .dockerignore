@@ -1,0 +1,13 @@
+.git
+.gitignore
+node_modules
+dist
+.vscode
+*.log
+.env
+.env.*
+!/.env.prod.example
+backend/__pycache__
+backend/*.sqlite3
+backend/staticfiles
+backend/media
