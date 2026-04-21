@@ -1,3 +1,4 @@
+import { uuidv4 } from '../../utils/uuid';
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { ModuleType, NgafaBookingItem, NgafaEvent, NgafaItem, Client } from '../../types';
@@ -92,7 +93,7 @@ export const NgafaModule = () => {
   const handleCreateClient = async (e: React.FormEvent) => {
     e.preventDefault();
     const created = await addClient({
-      id: crypto.randomUUID(),
+    id: uuidv4(),
       ...newClient,
       module: ModuleType.NGAFA,
       createdAt: new Date().toISOString()
@@ -142,7 +143,7 @@ export const NgafaModule = () => {
     });
 
     const newEvent: NgafaEvent = {
-        id: crypto.randomUUID(),
+        id: uuidv4(),
         clientId: selectedClientId,
         eventDate,
         items: bookingItems,
@@ -178,7 +179,7 @@ export const NgafaModule = () => {
         setEditingItem(null);
     } else {
         await addNgafaItem({
-            id: crypto.randomUUID(),
+            id: uuidv4(),
             name: itemForm.name,
             category: itemForm.category || 'عام',
             price,

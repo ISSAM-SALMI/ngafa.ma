@@ -1,3 +1,4 @@
+import { uuidv4 } from '../../utils/uuid';
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { ModuleType, DressStatus, DressRental, Dress } from '../../types';
@@ -95,7 +96,7 @@ export const DressModule = () => {
   const handleCreateClient = async () => {
     if (!newClient.firstName || !newClient.lastName) return null;
     return await addClient({
-      id: crypto.randomUUID(),
+      id: uuidv4(),
       ...newClient,
       module: ModuleType.DRESSES,
       createdAt: new Date().toISOString()
@@ -121,7 +122,7 @@ export const DressModule = () => {
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1; 
 
     const newRental: DressRental = {
-      id: crypto.randomUUID(),
+      id: uuidv4(),
       clientId: finalClientId,
       dressId: rentalData.dressId,
       startDate: rentalData.startDate,
@@ -145,7 +146,7 @@ export const DressModule = () => {
     e.preventDefault();
     const price = parseFloat(dressForm.pricePerDay);
     const payload = {
-        id: dressForm.id || crypto.randomUUID(),
+        id: dressForm.id || uuidv4(),
         name: dressForm.name,
         reference: dressForm.reference,
         size: dressForm.size,

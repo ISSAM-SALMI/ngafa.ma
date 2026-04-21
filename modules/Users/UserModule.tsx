@@ -1,3 +1,4 @@
+import { uuidv4 } from '../../utils/uuid';
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { UserRole, User } from '../../types';
@@ -18,7 +19,7 @@ export const UserModule = () => {
     if (!newUser.name || !newUser.username || !newUser.password) return;
 
     addUser({
-      id: crypto.randomUUID(),
+      id: uuidv4(),
       name: newUser.name,
       username: newUser.username,
       password: newUser.password,

@@ -1,3 +1,4 @@
+import { uuidv4 } from '../../utils/uuid';
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { ModuleType, SalonService, SalonVisit, Client } from '../../types';
@@ -69,7 +70,7 @@ export const SalonModule = () => {
   const handleCreateClient = async (e: React.FormEvent) => {
     e.preventDefault();
     const created = await addClient({
-      id: crypto.randomUUID(),
+      id: uuidv4(),
       ...newClient,
       module: ModuleType.SALON,
       createdAt: new Date().toISOString()
@@ -89,7 +90,7 @@ export const SalonModule = () => {
     const servicesObjs = services.filter(s => selectedServices.includes(s.id));
     
     const newVisit: SalonVisit = {
-       id: crypto.randomUUID(),
+      id: uuidv4(),
        clientId: selectedClientId,
        date: visitDate,
        services: servicesObjs,
@@ -125,7 +126,7 @@ export const SalonModule = () => {
       setEditingService(null);
     } else {
       await addService({
-        id: crypto.randomUUID(),
+        id: uuidv4(),
         name: serviceForm.name,
         price: priceNum
       });
