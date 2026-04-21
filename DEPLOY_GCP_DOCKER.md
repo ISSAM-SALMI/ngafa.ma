@@ -43,12 +43,14 @@ cp .env.prod.example .env.prod
 nano .env.prod
 ```
 
+Production values are already prefilled for:
+- DB: `ngafa_db`
+- User: `zahra@admin.com`
+- Password: `Admin@12345`
+- Allowed external IP: `34.57.44.214`
+
 Update at minimum:
 - `SECRET_KEY`
-- `POSTGRES_PASSWORD`
-- `ALLOWED_HOSTS` (VM IP and/or domain)
-- `CSRF_TRUSTED_ORIGINS`
-- `CORS_ALLOWED_ORIGINS`
 
 ## 5) Build and run production stack
 
